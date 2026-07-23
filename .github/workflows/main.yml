@@ -2,9 +2,8 @@ name: Bot de Noticias de Cine
 
 on:
   schedule:
-    # Se ejecuta cada hora en el minuto 0 
     - cron: '0 * * * *'
-  workflow_dispatch: # Activa un botón para que puedas probarlo manualmente cuando quieras
+  workflow_dispatch: 
 
 jobs:
   publicar_tweet:
@@ -12,10 +11,10 @@ jobs:
 
     steps:
     - name: Clonar el repositorio
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Configurar Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
@@ -33,7 +32,6 @@ jobs:
       run: python bot.py
 
     - name: Guardar el registro de noticias publicadas
-      # Esto hace un commit automático en el repo para que no repita noticias la próxima vez
       run: |
         git config --global user.name 'GitHub Action Bot'
         git config --global user.email 'action@github.com'
