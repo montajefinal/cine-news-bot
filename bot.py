@@ -34,31 +34,35 @@ def guardar_registro(registro):
 
 def publicar_noticias():
     print("Buscando nuevas noticias de cine...")
-    feed = feedparser.parse(URL_FEED)
+    
+    # 1. Camuflaje: Le decimos a la web que somos un navegador Windows normal
+    navegador_falso = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    feed = feedparser.parse(URL_FEED, agent=navegador_falso)
+    
+    # 2. Chivato de ingesta de datos
+    print(f"🔍 Noticias detectadas en el feed: {len(feed.entries)}")
+    
     publicadas = cargar_registro()
     
-    # Recorremos las noticias (las 5 más recientes)
     for entrada in feed.entries[:5]:
         link = entrada.link
         titulo = entrada.title
         
         if link not in publicadas:
-            # Crear el formato del tweet
             texto_tweet = f"🎬 Novedad: {titulo}\n\n{link} #Cine #MontajeFinal"
             
             try:
-                # Publicar el tweet
                 client.create_tweet(text=texto_tweet)
                 print(f"✅ Tweet publicado: {titulo}")
                 
-                # Registrar para no volver a publicar
                 publicadas.append(link)
                 guardar_registro(publicadas)
-                
-                # Pausa para no saturar la API
                 time.sleep(10) 
             except Exception as e:
                 print(f"❌ Error al publicar: {e}")
-                
+        else:
+            # 3. Chivato de control de duplicados
+            print(f"⏭️ Saltando (ya publicada): {titulo}")
+            
 if __name__ == "__main__":
     publicar_noticias()
