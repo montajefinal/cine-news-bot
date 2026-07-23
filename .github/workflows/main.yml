@@ -19,9 +19,10 @@ jobs:
         python-version: '3.10'
 
     - name: Instalar dependencias
+      # Instalación directa sin usar requirements.txt
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install feedparser tweepy
 
     - name: Ejecutar el bot
       env:
