@@ -1,0 +1,41 @@
+name: Bot de Noticias de Cine
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch: 
+
+jobs:
+  publicar_tweet:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Clonar el repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar dependencias
+      # Instalación directa sin usar requirements.txt
+      run: |
+        python -m pip install --upgrade pip
+        pip install feedparser tweepy
+
+    - name: Ejecutar el bot
+      env:
+        API_KEY: ${{ secrets.API_KEY }}
+        API_SECRET: ${{ secrets.API_SECRET }}
+        ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+      run: python bot.py
+
+    - name: Guardar el registro de noticias publicadas
+      run: |
+        git config --global user.name 'GitHub Action Bot'
+        git config --global user.email 'action@github.com'
+        git add noticias_publicadas.json
+        git commit -m "Actualizar registro de noticias" || exit 0
+        git push
