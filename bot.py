@@ -17,7 +17,7 @@ client = tweepy.Client(
 )
 
 # 2. Configuración del Feed RSS
-URL_FEED = "https://www.espinof.com/feed"
+URL_FEED = "https://www.sensacine.com/rss/noticias-cine.xml"
 ARCHIVO_REGISTRO = "noticias_publicadas.json"
 
 def cargar_registro():
