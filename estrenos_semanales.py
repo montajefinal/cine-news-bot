@@ -31,6 +31,7 @@ MAX_PAGES = 5
 MAX_WEEKLY_MOVIES = 6
 RELEASE_TYPES_THEATRICAL = {2, 3}
 
+
 GENRES = {
     28: "Acción", 12: "Aventura", 16: "Animación",
     35: "Comedia", 80: "Crimen", 99: "Documental",
@@ -45,6 +46,7 @@ GENRES = {
 def tmdb_get(path, params=None):
     """Consulta la API de TMDb."""
     api_key = os.getenv("TMDB_API_KEY", "").strip()
+
     if not api_key:
         raise RuntimeError(
             "Falta TMDB_API_KEY. Configúrala en GitHub > "
@@ -54,6 +56,7 @@ def tmdb_get(path, params=None):
     query = {"api_key": api_key, "language": "es-ES"}
     query.update(params or {})
     url = f"{API_BASE}{path}?{urllib.parse.urlencode(query)}"
+
     request = urllib.request.Request(
         url,
         headers={
@@ -65,16 +68,20 @@ def tmdb_get(path, params=None):
     try:
         with urllib.request.urlopen(request, timeout=25) as response:
             return json.loads(response.read().decode("utf-8"))
+
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:300]
+
         if exc.code in (401, 403):
             raise RuntimeError(
                 "TMDb ha rechazado la clave API v3. "
                 "Revisa el secreto TMDB_API_KEY."
             ) from exc
+
         raise RuntimeError(
             f"Error HTTP de TMDb ({exc.code}): {detail}"
         ) from exc
+
     except urllib.error.URLError as exc:
         raise RuntimeError(
             f"No se pudo conectar con TMDb: {exc.reason}"
@@ -82,7 +89,7 @@ def tmdb_get(path, params=None):
 
 
 def spanish_theatrical_release(movie_id, start, end):
-    """Busca fechas de estreno teatral registradas específicamente en España."""
+    """Busca estrenos teatrales registrados específicamente en España."""
     data = tmdb_get(f"/movie/{movie_id}/release_dates")
     releases = []
 
@@ -111,8 +118,50 @@ def spanish_theatrical_release(movie_id, start, end):
     return releases[0][0].isoformat()
 
 
+def youtube_video_accessible(video_key):
+    """Comprueba si YouTube devuelve información pública del vídeo."""
+    video_url = (
+        "https://www.youtube.com/watch?v="
+        + urllib.parse.quote(video_key, safe="")
+    )
+
+    oembed_url = (
+        "https://www.youtube.com/oembed?"
+        + urllib.parse.urlencode({
+            "url": video_url,
+            "format": "json",
+        })
+    )
+
+    request = urllib.request.Request(
+        oembed_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; MontajeFinal/1.0)",
+            "Accept": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            if response.status != 200:
+                return False
+
+            result = json.loads(response.read().decode("utf-8"))
+            return bool(result.get("title"))
+
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        return False
+
+
 def trailer_for(movie_id):
-    """Busca un tráiler de YouTube, priorizando el español y los oficiales."""
+    """Devuelve únicamente un tráiler de YouTube que supera la comprobación."""
     try:
         videos = tmdb_get(
             f"/movie/{movie_id}/videos",
@@ -123,18 +172,19 @@ def trailer_for(movie_id):
             video for video in videos
             if video.get("site") == "YouTube" and video.get("key")
         ]
+
         trailers = [
             video for video in videos
             if video.get("type") == "Trailer"
         ]
+
         spanish = [
             video for video in trailers
             if video.get("iso_639_1") == "es"
         ]
-        choices = spanish or trailers or videos
 
-        if not choices:
-            return None
+        # Preferimos tráiler en español; si no existe, uno de otro idioma.
+        choices = spanish or trailers or videos
 
         choices.sort(
             key=lambda video: (
@@ -143,7 +193,26 @@ def trailer_for(movie_id):
             ),
             reverse=True,
         )
-        return "https://www.youtube.com/watch?v=" + choices[0]["key"]
+
+        # No damos por disponible un vídeo solo porque figure en TMDb.
+        for video in choices:
+            video_key = video["key"]
+
+            if youtube_video_accessible(video_key):
+                url = (
+                    "https://www.youtube.com/watch?v="
+                    + video_key
+                )
+                print(f"Tráiler comprobado para película {movie_id}: {url}")
+                return url
+
+            print(
+                f"Tráiler no accesible; se descarta: "
+                f"película {movie_id}, vídeo {video_key}"
+            )
+
+        print(f"No hay tráiler accesible para la película {movie_id}.")
+        return None
 
     except RuntimeError as exc:
         print(
@@ -154,8 +223,9 @@ def trailer_for(movie_id):
 
 
 def download_poster(movie):
-    """Descarga el póster y devuelve la ruta relativa."""
+    """Descarga el póster y devuelve su ruta relativa."""
     poster_path = movie.get("poster_path")
+
     if not poster_path:
         print(f"Aviso: {movie.get('title', 'Película')} no tiene póster.")
         return None
@@ -168,10 +238,14 @@ def download_poster(movie):
         or movie.get("original_title")
         or str(movie["id"])
     )
+
     safe_title = re.sub(
         r"[^a-zA-Z0-9_-]+", "-", title
     ).strip("-_").lower()
-    destination = folder / f"{safe_title[:70] or 'pelicula'}-{movie['id']}.jpg"
+
+    destination = (
+        folder / f"{safe_title[:70] or 'pelicula'}-{movie['id']}.jpg"
+    )
 
     request = urllib.request.Request(
         IMAGE_BASE + poster_path,
@@ -197,7 +271,7 @@ def download_poster(movie):
 
 
 def get_releases(start, end):
-    """Filtra por estrenos teatrales españoles comprobados en TMDb."""
+    """Filtra estrenos teatrales españoles comprobados en TMDb."""
     candidates = {}
 
     for page in range(1, MAX_PAGES + 1):
@@ -222,6 +296,7 @@ def get_releases(start, end):
             break
 
     verified = []
+
     ordered = sorted(
         candidates.values(),
         key=lambda movie: (
@@ -239,7 +314,8 @@ def get_releases(start, end):
             )
         except RuntimeError as exc:
             print(
-                f"Aviso: no se pudo verificar {movie.get('title', movie['id'])}: {exc}",
+                f"Aviso: no se pudo verificar "
+                f"{movie.get('title', movie['id'])}: {exc}",
                 file=sys.stderr,
             )
             continue
@@ -262,7 +338,9 @@ def get_releases(start, end):
         ),
         reverse=True,
     )
+
     movies = verified[:MAX_WEEKLY_MOVIES]
+
     movies.sort(
         key=lambda movie: (
             movie.get("release_date") or "9999-12-31",
@@ -271,12 +349,15 @@ def get_releases(start, end):
     )
 
     for movie in movies:
+        # Si no hay un vídeo accesible, trailer_url será None.
         movie["trailer_url"] = trailer_for(movie["id"])
+
         movie["poster_url"] = (
             IMAGE_BASE + movie["poster_path"]
             if movie.get("poster_path")
             else None
         )
+
         movie["poster_file"] = download_poster(movie)
 
     return movies
@@ -303,6 +384,7 @@ def build_message(movies, start, end):
             "verificados en TMDb para este periodo.",
             "Puede haber estrenos aún no registrados en la base de datos.",
         ]
+
     else:
         lines += ["🍿 LOS ESTRENOS MÁS DESTACADOS DE LA SEMANA", ""]
 
@@ -312,10 +394,15 @@ def build_message(movies, start, end):
                 or movie.get("original_title")
                 or "Título no disponible"
             )
+
             genres = ", ".join(
-                GENRES[g] for g in movie.get("genre_ids", []) if g in GENRES
+                GENRES[g]
+                for g in movie.get("genre_ids", [])
+                if g in GENRES
             )
+
             overview = (movie.get("overview") or "").strip()
+
             if len(overview) > 360:
                 overview = overview[:357].rsplit(" ", 1)[0] + "…"
 
@@ -325,21 +412,26 @@ def build_message(movies, start, end):
                 overview or "Sinopsis pendiente de confirmar.",
             ]
 
+            # Solo incluye el enlace si el vídeo superó la comprobación.
             if movie.get("trailer_url"):
                 lines.append("▶️ Tráiler: " + movie["trailer_url"])
+
             if movie.get("poster_file"):
                 lines.append("🖼️ Póster: " + movie["poster_file"])
+
             lines.append("")
 
         featured = max(
             movies,
             key=lambda movie: float(movie.get("popularity") or 0),
         )
+
         featured_title = (
             featured.get("title")
             or featured.get("original_title")
             or "Título por confirmar"
         )
+
         lines += [
             "⭐ PELÍCULA DESTACADA",
             f"{featured_title} — destacada por popularidad registrada en TMDb.",
@@ -354,6 +446,7 @@ def build_message(movies, start, end):
         "distribuidoras y salas antes de publicar.",
         "#EstrenosSemanales #MontajeFinal",
     ]
+
     return "\n".join(lines).strip() + "\n"
 
 
@@ -380,9 +473,20 @@ def generate_promo_image(movies, start, end):
     panel = (24, 29, 43)
 
     # Cabecera
-    draw.rounded_rectangle((32, 28, 1048, 205), radius=28, fill=panel)
-    draw.text((60, 48), "MONTAJE FINAL", font=font(20, True), fill=gold)
-    draw.text((60, 82), "ESTRENOS DE CINE", font=font(48, True), fill=white)
+    draw.rounded_rectangle(
+        (32, 28, 1048, 205), radius=28, fill=panel
+    )
+
+    draw.text(
+        (60, 48), "MONTAJE FINAL",
+        font=font(20, True), fill=gold,
+    )
+
+    draw.text(
+        (60, 82), "ESTRENOS DE CINE",
+        font=font(48, True), fill=white,
+    )
+
     draw.text(
         (62, 145),
         f"EN ESPAÑA · {start:%d/%m} — {end:%d/%m/%Y}",
@@ -391,19 +495,24 @@ def generate_promo_image(movies, start, end):
     )
 
     if not movies:
-        draw.rounded_rectangle((32, 235, 1048, 520), radius=24, fill=panel)
+        draw.rounded_rectangle(
+            (32, 235, 1048, 520), radius=24, fill=panel
+        )
+
         draw.text(
             (60, 280),
             "Sin estrenos españoles verificados",
             font=font(27, True),
             fill=white,
         )
+
         draw.text(
             (60, 330),
             "para este periodo en TMDb.",
             font=font(24),
             fill=muted,
         )
+
     else:
         margin, gap_x, gap_y = 32, 24, 20
         card_w = (width - margin * 2 - gap_x) // 2
@@ -423,6 +532,7 @@ def generate_promo_image(movies, start, end):
             # Póster
             poster = None
             poster_file = movie.get("poster_file")
+
             if poster_file and Path(poster_file).exists():
                 try:
                     with Image.open(poster_file) as source:
@@ -435,10 +545,15 @@ def generate_promo_image(movies, start, end):
                     poster = None
 
             if poster is None:
-                poster = Image.new("RGB", (150, 225), (55, 62, 79))
+                poster = Image.new(
+                    "RGB", (150, 225), (55, 62, 79)
+                )
+
                 ImageDraw.Draw(poster).text(
-                    (17, 100), "SIN PÓSTER",
-                    font=font(16, True), fill=white,
+                    (17, 100),
+                    "SIN PÓSTER",
+                    font=font(16, True),
+                    fill=white,
                 )
 
             canvas.paste(poster, (x + 14, y + 15))
@@ -446,15 +561,19 @@ def generate_promo_image(movies, start, end):
             # Título con ajuste de línea
             text_x = x + 180
             text_w = card_w - 196
+
             title = (
                 movie.get("title")
                 or movie.get("original_title")
                 or "Título pendiente"
             )
 
-            title_lines, current = [], ""
+            title_lines = []
+            current = ""
+
             for word in title.split():
                 candidate = f"{current} {word}".strip()
+
                 if draw.textbbox(
                     (0, 0), candidate, font=font(22, True)
                 )[2] <= text_w:
@@ -463,6 +582,7 @@ def generate_promo_image(movies, start, end):
                     if current:
                         title_lines.append(current)
                     current = word
+
             if current:
                 title_lines.append(current)
 
@@ -482,9 +602,13 @@ def generate_promo_image(movies, start, end):
             )
 
             genres = [
-                GENRES[g] for g in movie.get("genre_ids", []) if g in GENRES
+                GENRES[g]
+                for g in movie.get("genre_ids", [])
+                if g in GENRES
             ]
+
             genre_text = ", ".join(genres[:2]) if genres else "Cine"
+
             if len(genre_text) > 24:
                 genre_text = genre_text[:21] + "…"
 
@@ -496,10 +620,16 @@ def generate_promo_image(movies, start, end):
             )
 
             # Sinopsis ajustada al espacio disponible
-            overview = " ".join((movie.get("overview") or "").split())
-            synopsis_lines, current = [], ""
+            overview = " ".join(
+                (movie.get("overview") or "").split()
+            )
+
+            synopsis_lines = []
+            current = ""
+
             for word in overview.split():
                 candidate = f"{current} {word}".strip()
+
                 if draw.textbbox(
                     (0, 0), candidate, font=font(13)
                 )[2] <= text_w:
@@ -508,6 +638,7 @@ def generate_promo_image(movies, start, end):
                     if current:
                         synopsis_lines.append(current)
                     current = word
+
             if current:
                 synopsis_lines.append(current)
 
@@ -519,6 +650,7 @@ def generate_promo_image(movies, start, end):
                     fill=(210, 215, 225),
                 )
 
+            # Solo dibuja el aviso cuando hay un enlace comprobado.
             if movie.get("trailer_url"):
                 draw.text(
                     (x + 18, y + 258),
@@ -528,13 +660,19 @@ def generate_promo_image(movies, start, end):
                 )
 
     # Pie
-    draw.line((32, 1255, 1048, 1255), fill=(64, 72, 91), width=2)
+    draw.line(
+        (32, 1255, 1048, 1255),
+        fill=(64, 72, 91),
+        width=2,
+    )
+
     draw.text(
         (34, 1270),
         "Fechas españolas registradas en TMDb",
         font=font(17),
         fill=muted,
     )
+
     draw.text(
         (34, 1300),
         "#EstrenosSemanales  #MontajeFinal",
@@ -544,6 +682,7 @@ def generate_promo_image(movies, start, end):
 
     output = Path("cartelera_estrenos.png")
     canvas.save(output, format="PNG", optimize=True)
+
     print(f"Cartelera visual guardada: {output}")
     return output.as_posix()
 
@@ -587,7 +726,9 @@ def main():
         "end_date": end.isoformat(),
         "count": len(movies),
         "source": "TMDb",
-        "release_scope": "Spanish theatrical releases verified via release_dates",
+        "release_scope": (
+            "Spanish theatrical releases verified via release_dates"
+        ),
         "movies": movies,
         "message": message,
         "image_file": image_file,
@@ -603,14 +744,20 @@ def main():
         1 for movie in movies if movie.get("poster_file")
     )
 
+    trailer_count = sum(
+        1 for movie in movies if movie.get("trailer_url")
+    )
+
     print(f"Estrenos españoles verificados: {len(movies)}.")
     print(f"Pósteres descargados: {poster_count}.")
+    print(f"Tráilers accesibles comprobados: {trailer_count}.")
     print(
         "Archivos creados: estrenos_semanales.txt, "
         "estrenos_semanales.json, cartelera_estrenos.png y posters/."
     )
     print("\n--- VISTA PREVIA DEL TEXTO ---\n")
     print(message)
+
     return 0
 
 
