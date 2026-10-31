@@ -18,7 +18,7 @@ API_BASE = "https://api.themoviedb.org/3"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 TZ = ZoneInfo("Europe/Madrid")
 MAX_PAGES = 10
-MAX_MOVIES = 50
+MAX_MOVIES = 6
 GENRES = {
     28: "Acción", 12: "Aventura", 16: "Animación", 35: "Comedia",
     80: "Crimen", 99: "Documental", 18: "Drama", 10751: "Familia",
