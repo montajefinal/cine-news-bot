@@ -651,13 +651,6 @@ def generate_promo_image(movies, start, end):
                 )
 
             # Solo dibuja el aviso cuando hay un enlace comprobado.
-            if movie.get("trailer_url"):
-                draw.text(
-                    (x + 18, y + 258),
-                    "TRÁILER DISPONIBLE ▶",
-                    font=font(15, True),
-                    fill=gold,
-                )
 
     # Pie
     draw.line(
