@@ -16,7 +16,7 @@ concurrency:
 jobs:
   generar-cartelera:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Descargar repositorio
@@ -26,6 +26,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Instalar dependencias de imagen
+        run: python -m pip install --upgrade Pillow
 
       - name: Generar cartelera
         env:
@@ -41,6 +44,7 @@ jobs:
           path: |
             estrenos_semanales.txt
             estrenos_semanales.json
+            cartelera_estrenos.png
             posters/
           if-no-files-found: error
           retention-days: 14
