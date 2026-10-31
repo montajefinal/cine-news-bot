@@ -1,0 +1,45 @@
+name: Estrenos semanales de Montaje Final
+
+on:
+  # Dos ejecuciones UTC cubren el horario de verano e invierno.
+  # El script solo genera la cartelera cuando son las 10:00 en Europe/Madrid.
+  schedule:
+    - cron: "0 8,9 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: estrenos-semanales
+  cancel-in-progress: false
+
+jobs:
+  generar-cartelera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generar cartelera
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: python estrenos_semanales.py
+
+      - name: Guardar cartelera como artefacto
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: estrenos-semanales
+          path: |
+            estrenos_semanales.txt
+            estrenos_semanales.json
+          if-no-files-found: error
+          retention-days: 14
